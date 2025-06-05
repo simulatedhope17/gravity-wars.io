@@ -25,9 +25,6 @@ const PLAYER_MAX_ENERGY = 120
 const ENERGY_ABSORPTION_RATE = 0.5
 const MASS_ABSORPTION_RATE = 0.8
 
-// Add WebSocket connection state
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
-
 type ObjectType =
   | "player"
   | "ai"
@@ -179,9 +176,6 @@ export default function GravityWarsGame() {
   const wormholesRef = useRef<GameObject[]>([])
   const [isPaused, setIsPaused] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const wsRef = useRef<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [otherPlayers, setOtherPlayers] = useState<GameObject[]>([]);
 
   const [gameState, setGameState] = useState<"menu" | "playing" | "gameOver">("menu")
   const [score, setScore] = useState(0)
@@ -1085,28 +1079,6 @@ export default function GravityWarsGame() {
       ctx.restore()
     }
 
-    // Draw other players
-    otherPlayers.forEach((player) => {
-      const screenX = player.x - camera.x;
-      const screenY = player.y - camera.y;
-
-      if (screenX < -100 || screenX > CANVAS_WIDTH + 100 || screenY < -100 || screenY > CANVAS_HEIGHT + 100) return;
-
-      ctx.save();
-      ctx.fillStyle = player.color;
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw player name
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "12px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText(`Player ${player.id.slice(-4)}`, screenX, screenY - player.radius - 10);
-
-      ctx.restore();
-    });
-
     // Draw objects
     objects.forEach((obj) => {
       const screenX = obj.x - camera.x
@@ -1404,106 +1376,8 @@ export default function GravityWarsGame() {
 
   // Handle mobile gravity pull
   const handleMobileGravityPull = (active: boolean) => {
-    gravityPullActiveRef.current = active;
-    if (active) {
-      sendPlayerAction({
-        type: 'gravityPull',
-        active: true
-      });
-    }
+    gravityPullActiveRef.current = active
   }
-
-  // WebSocket connection setup
-  useEffect(() => {
-    const connectWebSocket = () => {
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('Connected to game server');
-        setIsConnected(true);
-      };
-
-      ws.onclose = () => {
-        console.log('Disconnected from game server');
-        setIsConnected(false);
-        // Attempt to reconnect after 5 seconds
-        setTimeout(connectWebSocket, 5000);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          handleServerMessage(data);
-        } catch (error) {
-          console.error('Error handling server message:', error);
-        }
-      };
-
-      return () => {
-        ws.close();
-      };
-    };
-
-    connectWebSocket();
-  }, []);
-
-  // Handle server messages
-  const handleServerMessage = (data: any) => {
-    switch (data.type) {
-      case 'init':
-        // Initialize game with server state
-        if (data.gameState) {
-          const { players, objects } = data.gameState;
-          setOtherPlayers(players.filter((p: GameObject) => p.id !== data.playerId));
-          gameObjectsRef.current = objects;
-        }
-        break;
-
-      case 'gameState':
-        // Update game state from server
-        if (data.state) {
-          const { players, objects } = data.state;
-          setOtherPlayers(players.filter((p: GameObject) => p.id !== playerRef.current?.id));
-          gameObjectsRef.current = objects;
-        }
-        break;
-
-      case 'playerJoined':
-        // Handle new player joining
-        if (data.player) {
-          setOtherPlayers(prev => [...prev, data.player]);
-        }
-        break;
-
-      case 'playerLeft':
-        // Handle player leaving
-        if (data.playerId) {
-          setOtherPlayers(prev => prev.filter(p => p.id !== data.playerId));
-        }
-        break;
-    }
-  };
-
-  // Send player updates to server
-  const sendPlayerUpdate = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN && playerRef.current) {
-      wsRef.current.send(JSON.stringify({
-        type: 'update',
-        state: playerRef.current
-      }));
-    }
-  };
-
-  // Send player actions to server
-  const sendPlayerAction = (action: any) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'action',
-        action
-      }));
-    }
-  };
 
   // Main game loop
   const gameLoop = () => {
@@ -1593,11 +1467,6 @@ export default function GravityWarsGame() {
         energy: currentPlayer.energy!,
         maxEnergy: currentPlayer.maxEnergy!,
       })
-    }
-
-    // Send player updates to server
-    if (frameCountRef.current % 2 === 0) { // Send updates every 2 frames
-      sendPlayerUpdate();
     }
 
     render()
